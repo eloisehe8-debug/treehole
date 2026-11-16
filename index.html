@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>树洞 Treehole</title>
+<meta name="description" content="匿名说出烦心事，也匿名倾听别人。An anonymous place to share what's on your mind and listen to others.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="./"><span class="hole" aria-hidden="true"></span><span data-i18n="brand">树洞</span></a>
+    <div class="top-actions">
+      <button type="button" class="ghost" id="lang-toggle" aria-label="Switch language">EN</button>
+      <span class="me" id="me" hidden></span>
+      <button type="button" class="ghost" id="sign-out" hidden data-i18n="signOut">退出</button>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <section class="intro">
+    <h1 data-i18n="tagline">把烦心事说给树洞听</h1>
+    <p data-i18n="intro">这里每个人都是匿名的。你可以倾诉，也可以倾听别人；对倾诉和回复都可以匿名评价或举报。</p>
+  </section>
+
+  <section class="notice" id="setup" hidden></section>
+
+  <section class="panel" id="auth" hidden>
+    <h2 data-i18n="signInTitle">登录后才能发帖和回复</h2>
+    <p class="muted" data-i18n="signInHint">输入邮箱，我们会发一个登录链接给你。别人只会看到你的随机昵称，看不到邮箱。</p>
+    <form id="auth-form" class="row">
+      <label class="sr" for="auth-email" data-i18n="email">邮箱</label>
+      <input id="auth-email" type="email" required autocomplete="email" placeholder="you@example.com">
+      <button type="submit" class="primary" data-i18n="sendLink">发送登录链接</button>
+    </form>
+    <p class="status" id="auth-status" role="status"></p>
+  </section>
+
+  <section class="panel" id="compose" hidden>
+    <form id="post-form">
+      <label for="post-body" class="label" data-i18n="composeLabel">想说点什么？</label>
+      <textarea id="post-body" maxlength="2000" rows="4" required data-i18n-ph="composePh" placeholder="今天让你烦心的事……"></textarea>
+      <div class="row between">
+        <div class="moods" id="mood-picker" role="radiogroup" data-i18n-aria="moodLabel" aria-label="心情"></div>
+        <div class="row">
+          <span class="count" id="post-count">0 / 2000</span>
+          <button type="submit" class="primary" data-i18n="post">放进树洞</button>
+        </div>
+      </div>
+      <p class="status" id="post-status" role="status"></p>
+    </form>
+  </section>
+
+  <section class="panel admin" id="admin" hidden>
+    <h2 data-i18n="adminTitle">待处理的举报</h2>
+    <div id="report-list"></div>
+  </section>
+
+  <section id="feed" aria-live="polite"></section>
+  <div class="center"><button type="button" class="ghost" id="more" hidden data-i18n="loadMore">加载更多</button></div>
+</main>
+
+<footer class="help">
+  <div class="help-inner">
+    <strong data-i18n="helpTitle">如果你正处在危险中，或有伤害自己的想法</strong>
+    <p data-i18n="helpBody">树洞不能替代专业帮助。请立即联系身边信任的人，或拨打心理援助热线：</p>
+    <ul>
+      <li><span data-i18n="helpCN">中国大陆 全国心理援助热线</span> <b>12356</b></li>
+      <li><span data-i18n="helpBJ">北京心理危机研究与干预中心</span> <b>010-82951332</b></li>
+      <li><span data-i18n="helpUS">美国 危机热线（电话或短信）</span> <b>988</b></li>
+      <li><span data-i18n="helpOther">其他国家和地区：</span> findahelpline.com</li>
+    </ul>
+    <p class="muted" data-i18n="helpEmergency">遇到紧急危险，请拨打当地急救电话（中国 120 / 110，美国 911）。</p>
+  </div>
+</footer>
+
+<div class="dialog-backdrop" id="dialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <h2 id="dialog-title"></h2>
+    <div id="dialog-body"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
