@@ -1,30 +1,15 @@
 (() => {
   const PAGE = 20;
-  const MOODS = ["sad", "anxious", "angry", "tired", "lonely", "other"];
+  const KINDS = window.KINDS;
+  const GROUPS = window.TOPIC_GROUPS;
   const REASONS = ["harassment", "hate", "spam", "self_harm", "other"];
   const $ = id => document.getElementById(id);
+  const VIEWS = ["auth", "feed", "topics", "write", "messages", "chat", "admin"];
 
   // ───────── Language ─────────
   let lang = "zh";
   try { lang = localStorage.getItem("lang") || (navigator.language.startsWith("zh") ? "zh" : "en"); } catch {}
   const t = (k, ...a) => { const v = window.I18N[lang][k]; return typeof v === "function" ? v(...a) : v; };
-
-  function applyLang() {
-    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
-    document.title = lang === "zh" ? "树洞 Treehole" : "Treehole 树洞";
-    document.querySelectorAll("[data-i18n]").forEach(el => el.textContent = t(el.dataset.i18n));
-    document.querySelectorAll("[data-i18n-ph]").forEach(el => el.placeholder = t(el.dataset.i18nPh));
-    document.querySelectorAll("[data-i18n-aria]").forEach(el => el.setAttribute("aria-label", t(el.dataset.i18nAria)));
-    $("lang-toggle").textContent = lang === "zh" ? "EN" : "中文";
-    renderMoods();
-    renderMe();
-    if (cfgOk) { renderFeed(); renderReports(); } else showSetup();
-  }
-  $("lang-toggle").onclick = () => {
-    lang = lang === "zh" ? "en" : "zh";
-    try { localStorage.setItem("lang", lang); } catch {}
-    applyLang();
-  };
 
   // ───────── Helpers ─────────
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -38,10 +23,14 @@
   function errText(e) {
     const msg = e?.message || String(e);
     if (msg.includes("rate_limited")) return t("rateLimited");
-    if (msg.includes("row-level security") && profile?.banned) return t("banned");
+    if (msg.includes("banned") || (msg.includes("row-level security") && profile?.banned)) return t("banned");
+    if (msg.includes("self")) return t("dmSelf");
     return t("error") + msg;
   }
   function setStatus(el, text, isErr) { el.textContent = text || ""; el.classList.toggle("err", !!isErr); }
+  const key = (type, id) => `${type}:${id}`;
+  const topicChip = tp => `<a class="chip topic-${tp}" href="#/topic/${tp}">#${esc(t("topics")[tp])}</a>`;
+  const kindChip = k => `<span class="chip kind">${esc(t("kinds")[k])}</span>`;
 
   // ───────── Supabase ─────────
   const cfg = window.TREEHOLE_CONFIG || {};
@@ -49,13 +38,81 @@
   const sb = cfgOk ? window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey) : null;
 
   let session = null, profile = null;
-  let posts = [], offset = 0, hasMore = false;
-  let repliesByPost = {}, summary = {}, comments = {}, myRatings = {};
+  let route = { name: "square" };
+
+  // Feed state
+  let feedKind = "all";
+  let posts = [], offset = 0, hasMore = false, feedToken = 0;
+  let repliesByPost = {}, summary = {}, reviews = {}, myRatings = {};
   const openPosts = new Set();
-  let mood = "other";
+
+  // Write state
+  let writeKind = "secret", writeTopic = "other";
+
+  // Messages state
+  let conversations = [], chat = null, chatMessages = [], chatTimer = null, inboxTimer = null;
+
+  // Admin
   let reports = [];
 
-  const key = (type, id) => `${type}:${id}`;
+  // ───────── Routing ─────────
+  function parseHash() {
+    const parts = location.hash.replace(/^#\/?/, "").split("/");
+    const name = parts[0] || "square";
+    if (name === "topic" && GROUPS.emotion.concat(GROUPS.life).includes(parts[1])) return { name: "topic", topic: parts[1] };
+    if (name === "chat" && /^\d+$/.test(parts[1] || "")) return { name: "chat", id: Number(parts[1]) };
+    if (["square", "topics", "write", "messages", "admin"].includes(name)) return { name };
+    return { name: "square" };
+  }
+
+  function show(view) {
+    VIEWS.forEach(v => $("view-" + v).hidden = v !== view);
+  }
+
+  async function go() {
+    route = parseHash();
+    clearInterval(chatTimer); chatTimer = null;
+    if (!cfgOk) { show(null); showSetup(); return; }
+    $("tabs").hidden = !session;
+    if (!session) { show("auth"); return; }
+    if (route.name === "admin" && !profile?.is_admin) route = { name: "square" };
+    const tab = route.name === "topic" ? "topics" : route.name === "chat" ? "messages" : route.name;
+    document.querySelectorAll("[data-tab]").forEach(a => a.classList.toggle("on", a.dataset.tab === tab));
+    window.scrollTo(0, 0);
+
+    if (route.name === "square" || route.name === "topic") { show("feed"); renderFeedHead(); loadFeed(true); }
+    if (route.name === "topics") { show("topics"); loadTopics(); }
+    if (route.name === "write") { show("write"); renderWrite(); }
+    if (route.name === "messages") { show("messages"); loadConversations(); }
+    if (route.name === "chat") { show("chat"); openChat(route.id); }
+    if (route.name === "admin") { show("admin"); loadReports(); }
+  }
+  window.addEventListener("hashchange", go);
+
+  function applyLang() {
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+    document.title = lang === "zh" ? "树洞 Treehole" : "Treehole 树洞";
+    document.querySelectorAll("[data-i18n]").forEach(el => el.textContent = t(el.dataset.i18n));
+    document.querySelectorAll("[data-i18n-ph]").forEach(el => el.placeholder = t(el.dataset.i18nPh));
+    document.querySelectorAll("[data-i18n-aria]").forEach(el => el.setAttribute("aria-label", t(el.dataset.i18nAria)));
+    $("lang-toggle").textContent = lang === "zh" ? "EN" : "中文";
+    renderMe();
+  }
+  $("lang-toggle").onclick = () => {
+    lang = lang === "zh" ? "en" : "zh";
+    try { localStorage.setItem("lang", lang); } catch {}
+    applyLang();
+    rerender();
+  };
+  function rerender() {
+    if (!session) return;
+    if (route.name === "square" || route.name === "topic") { renderFeedHead(); renderFeed(); }
+    if (route.name === "topics") loadTopics();
+    if (route.name === "write") renderWrite();
+    if (route.name === "messages") renderConversations();
+    if (route.name === "chat") renderChat();
+    if (route.name === "admin") renderReports();
+  }
 
   function showSetup() {
     const el = $("setup");
@@ -71,19 +128,19 @@
       const { data } = await sb.from("profiles").select("nickname,is_admin,banned").eq("id", session.user.id).maybeSingle();
       profile = data;
     }
-    $("auth").hidden = !!session;
-    $("compose").hidden = !session;
     $("sign-out").hidden = !session;
-    $("admin").hidden = !profile?.is_admin;
+    $("tab-admin").hidden = !profile?.is_admin;
     renderMe();
-    await loadFeed(true);
-    if (profile?.is_admin) loadReports();
+    clearInterval(inboxTimer);
+    if (session) { refreshUnread(); inboxTimer = setInterval(refreshUnread, 20000); }
+    go();
   }
 
   function renderMe() {
     const me = $("me");
     me.hidden = !profile;
-    if (profile) me.textContent = t("yourNick") + profile.nickname;
+    if (profile) me.textContent = profile.nickname;
+    me.title = t("yourNick") + (profile?.nickname || "");
   }
 
   $("auth-form").onsubmit = async e => {
@@ -108,100 +165,96 @@
     btn.disabled = false;
     if (error) setStatus($("auth-status"), t("codeWrong"), true);
   };
-  $("sign-out").onclick = () => sb.auth.signOut();
+  $("sign-out").onclick = async () => { await sb.auth.signOut(); location.hash = "#/square"; };
 
-  // ───────── Compose ─────────
-  function renderMoods() {
-    $("mood-picker").innerHTML = MOODS.map(m =>
-      `<button type="button" role="radio" class="chip mood-${m}" aria-checked="${m === mood}" data-mood="${m}">${esc(t("moods")[m])}</button>`
+  // ───────── Feed (Square and single topic) ─────────
+  function renderFeedHead() {
+    const isTopic = route.name === "topic";
+    $("feed-back").hidden = !isTopic;
+    $("feed-title").textContent = isTopic ? "#" + t("topics")[route.topic] : t("squareTitle");
+    $("feed-sub").textContent = isTopic ? "" : t("squareSub");
+    $("kind-filter").innerHTML = ["all", ...KINDS].map(k =>
+      `<button type="button" role="radio" class="chip filter" aria-checked="${k === feedKind}" data-kind="${k}">${esc(k === "all" ? t("all") : t("kinds")[k])}</button>`
     ).join("");
   }
-  $("mood-picker").onclick = e => {
-    const b = e.target.closest("[data-mood]"); if (!b) return;
-    mood = b.dataset.mood; renderMoods();
-  };
-  $("post-body").oninput = e => $("post-count").textContent = `${e.target.value.length} / 2000`;
-  $("post-form").onsubmit = async e => {
-    e.preventDefault();
-    const body = $("post-body").value.trim(); if (!body) return;
-    const btn = e.submitter; btn.disabled = true;
-    const { error } = await sb.from("posts").insert({ body, mood });
-    btn.disabled = false;
-    if (error) return setStatus($("post-status"), errText(error), true);
-    $("post-body").value = ""; $("post-count").textContent = "0 / 2000";
-    setStatus($("post-status"), t("posted"));
-    loadFeed(true);
+  $("kind-filter").onclick = e => {
+    const b = e.target.closest("[data-kind]"); if (!b) return;
+    feedKind = b.dataset.kind; renderFeedHead(); loadFeed(true);
   };
 
-  // ───────── Feed ─────────
   async function loadFeed(reset) {
-    if (reset) { offset = 0; posts = []; repliesByPost = {}; summary = {}; comments = {}; }
-    const { data, error } = await sb.from("feed_posts").select("*")
-      .order("created_at", { ascending: false }).range(offset, offset + PAGE - 1);
+    const token = ++feedToken;
+    if (reset) { offset = 0; posts = []; repliesByPost = {}; summary = {}; reviews = {}; $("feed").innerHTML = `<p class="muted center">…</p>`; }
+    let q = sb.from("feed_posts").select("*").order("created_at", { ascending: false }).range(offset, offset + PAGE - 1);
+    if (feedKind !== "all") q = q.eq("kind", feedKind);
+    if (route.name === "topic") q = q.eq("topic", route.topic);
+    const { data, error } = await q;
+    if (token !== feedToken) return;
     if (error) { $("feed").innerHTML = `<p class="status err">${esc(t("loadError"))}</p>`; return; }
     posts = posts.concat(data);
     offset += data.length;
     hasMore = data.length === PAGE;
-    await loadExtras(data.map(p => p.id));
+    await loadExtras(posts.map(p => p.id));
+    if (token !== feedToken) return;
     renderFeed();
   }
 
   async function loadExtras(postIds) {
     if (!postIds.length) return;
     const { data: reps } = await sb.from("feed_replies").select("*").in("post_id", postIds).order("created_at");
+    repliesByPost = {};
     for (const id of postIds) repliesByPost[id] = [];
-    (reps || []).forEach(r => repliesByPost[r.post_id].push(r));
+    (reps || []).forEach(r => (repliesByPost[r.post_id] ||= []).push(r));
     const replyIds = (reps || []).map(r => r.id);
 
     const sumQ = (type, ids) => ids.length ? sb.from("rating_summary").select("*").eq("target_type", type).in("target_id", ids) : { data: [] };
-    const comQ = (type, ids) => ids.length ? sb.from("rating_comments").select("*").eq("target_type", type).in("target_id", ids).order("created_at", { ascending: false }) : { data: [] };
-    const [s1, s2, c1, c2] = await Promise.all([sumQ("post", postIds), sumQ("reply", replyIds), comQ("post", postIds), comQ("reply", replyIds)]);
+    const revQ = (type, ids) => ids.length ? sb.from("rating_comments").select("*").eq("target_type", type).in("target_id", ids).order("created_at", { ascending: false }) : { data: [] };
+    const [s1, s2, c1, c2, mine] = await Promise.all([
+      sumQ("post", postIds), sumQ("reply", replyIds), revQ("post", postIds), revQ("reply", replyIds),
+      sb.from("ratings").select("target_type,target_id,helpful,comment"),
+    ]);
+    summary = {}; reviews = {}; myRatings = {};
     [...(s1.data || []), ...(s2.data || [])].forEach(s => summary[key(s.target_type, s.target_id)] = s);
-    [...(c1.data || []), ...(c2.data || [])].forEach(c => (comments[key(c.target_type, c.target_id)] ||= []).push(c));
-
-    if (session) {
-      const { data: mine } = await sb.from("ratings").select("target_type,target_id,helpful,comment");
-      myRatings = {};
-      (mine || []).forEach(r => myRatings[key(r.target_type, r.target_id)] = r);
-    }
+    [...(c1.data || []), ...(c2.data || [])].forEach(c => (reviews[key(c.target_type, c.target_id)] ||= []).push(c));
+    (mine.data || []).forEach(r => myRatings[key(r.target_type, r.target_id)] = r);
   }
 
-  function itemFooter(type, item) {
+  function itemActions(type, item) {
     const k = key(type, item.id), s = summary[k], mineR = myRatings[k];
-    const com = comments[k] || [];
+    const rev = reviews[k] || [];
+    const btn = (act, label) => `<button type="button" class="link" data-act="${act}" data-type="${type}" data-id="${item.id}">${esc(label)}</button>`;
     return `
       <div class="actions">
         <span class="score" title="${esc(t("helpful"))} / ${esc(t("unhelpful"))}">
           <span class="up${mineR?.helpful === true ? " on" : ""}">▲ ${s?.helpful_count || 0}</span>
           <span class="down${mineR?.helpful === false ? " on" : ""}">▼ ${s?.unhelpful_count || 0}</span>
         </span>
-        ${item.mine ? "" : `<button type="button" class="link" data-act="rate" data-type="${type}" data-id="${item.id}">${esc(t("rate"))}</button>`}
-        ${item.mine ? "" : `<button type="button" class="link" data-act="report" data-type="${type}" data-id="${item.id}">${esc(t("report"))}</button>`}
-        ${item.mine ? `<button type="button" class="link" data-act="delete" data-type="${type}" data-id="${item.id}">${esc(t("del"))}</button>` : ""}
+        ${item.mine ? btn("delete", t("del")) : btn("dm", t("dm")) + btn("rate", t("rate")) + btn("report", t("report"))}
       </div>
-      ${com.length ? `<details class="reviews"><summary>${esc(t("comments", com.length))}</summary>
-        <ul>${com.map(c => `<li><span class="${c.helpful ? "up" : "down"}">${c.helpful ? "▲" : "▼"}</span> ${esc(c.comment)}</li>`).join("")}</ul></details>` : ""}`;
+      ${rev.length ? `<details class="reviews"><summary>${esc(t("reviews", rev.length))}</summary>
+        <ul>${rev.map(c => `<li><span class="${c.helpful ? "up" : "down"}">${c.helpful ? "▲" : "▼"}</span> ${esc(c.comment)}</li>`).join("")}</ul></details>` : ""}`;
   }
 
   function renderFeed() {
-    const feed = $("feed");
-    if (!cfgOk) { feed.innerHTML = ""; return; }
     $("more").hidden = !hasMore;
-    if (!posts.length) { feed.innerHTML = `<p class="empty">${esc(t("empty"))}</p>`; return; }
-    feed.innerHTML = posts.map(p => {
+    if (!posts.length) {
+      $("feed").innerHTML = `<p class="empty">${esc(feedKind === "all" && route.name === "square" ? t("empty") : t("emptyFilter"))}</p>`;
+      return;
+    }
+    $("feed").innerHTML = posts.map(p => {
       const reps = repliesByPost[p.id] || [];
       const open = openPosts.has(p.id);
       return `<article class="post${p.hidden ? " is-hidden" : ""}">
         <div class="meta">
-          <span class="chip mood-${p.mood}">${esc(t("moods")[p.mood])}</span>
+          ${kindChip(p.kind)} ${topicChip(p.topic)}
           <span class="nick">${esc(p.nickname)}${p.mine ? ` <em>(${esc(t("you"))})</em>` : ""}</span>
           <time datetime="${esc(p.created_at)}">${esc(ago(p.created_at))}</time>
           ${p.hidden ? `<span class="flag">${esc(t("hidden"))}</span>` : ""}
         </div>
         <p class="body">${esc(p.body)}</p>
-        ${itemFooter("post", p)}
+        ${itemActions("post", p)}
         <button type="button" class="toggle" data-act="toggle" data-id="${p.id}" aria-expanded="${open}">
-          ${esc(open ? t("hideReplies") : (reps.length ? t("replies", reps.length) : t("reply")))}
+          ${esc(open ? t("hideComments") : (reps.length ? t("comments", reps.length) : t("comment")))}
         </button>
         ${open ? `<div class="replies">
           ${reps.map(r => `<div class="reply${r.hidden ? " is-hidden" : ""}">
@@ -209,13 +262,13 @@
               <time datetime="${esc(r.created_at)}">${esc(ago(r.created_at))}</time>
               ${r.hidden ? `<span class="flag">${esc(t("hidden"))}</span>` : ""}</div>
             <p class="body">${esc(r.body)}</p>
-            ${itemFooter("reply", r)}
+            ${itemActions("reply", r)}
           </div>`).join("")}
-          ${session ? `<form class="reply-form" data-post="${p.id}">
-            <label class="sr" for="reply-${p.id}">${esc(t("reply"))}</label>
-            <textarea id="reply-${p.id}" maxlength="1000" rows="2" required placeholder="${esc(t("replyPh"))}"></textarea>
+          <form class="reply-form" data-post="${p.id}">
+            <label class="sr" for="reply-${p.id}">${esc(t("comment"))}</label>
+            <textarea id="reply-${p.id}" maxlength="1000" rows="2" required placeholder="${esc(t("commentPh"))}"></textarea>
             <div class="row between"><p class="status" role="status"></p><button type="submit" class="primary small">${esc(t("send"))}</button></div>
-          </form>` : `<p class="muted small">${esc(t("signInToAct"))}</p>`}
+          </form>
         </div>` : ""}
       </article>`;
     }).join("");
@@ -223,14 +276,21 @@
 
   $("more").onclick = () => loadFeed(false);
 
-  $("feed").onclick = e => {
+  $("feed").onclick = async e => {
     const b = e.target.closest("[data-act]"); if (!b) return;
     const id = Number(b.dataset.id), type = b.dataset.type;
-    if (b.dataset.act === "toggle") { openPosts.has(id) ? openPosts.delete(id) : openPosts.add(id); renderFeed(); return; }
-    if (!session) { alertDialog(t("signInToAct")); return; }
-    if (b.dataset.act === "rate") rateDialog(type, id);
-    if (b.dataset.act === "report") reportDialog(type, id);
-    if (b.dataset.act === "delete") confirmDialog(t("confirmDel"), async () => {
+    const act = b.dataset.act;
+    if (act === "toggle") { openPosts.has(id) ? openPosts.delete(id) : openPosts.add(id); renderFeed(); return; }
+    if (act === "rate") rateDialog(type, id);
+    if (act === "report") reportDialog(type, id);
+    if (act === "dm") {
+      b.disabled = true;
+      const { data, error } = await sb.rpc("start_conversation", { p_type: type, p_id: id });
+      b.disabled = false;
+      if (error) return alertDialog(errText(error));
+      location.hash = "#/chat/" + data;
+    }
+    if (act === "delete") confirmDialog(t("del"), t("confirmDel"), async () => {
       const { error } = await sb.from(type === "post" ? "posts" : "replies").delete().eq("id", id);
       if (error) return alertDialog(errText(error));
       loadFeed(true);
@@ -246,14 +306,149 @@
     const { error } = await sb.from("replies").insert({ post_id: Number(f.dataset.post), body });
     btn.disabled = false;
     if (error) return setStatus(st, errText(error), true);
-    await reloadPost(Number(f.dataset.post));
+    await loadExtras(posts.map(p => p.id));
+    renderFeed();
   };
 
-  async function reloadPost(postId) {
-    await loadExtras(posts.map(p => p.id));
-    openPosts.add(postId);
-    renderFeed();
+  // ───────── Topics ─────────
+  async function loadTopics() {
+    const { data } = await sb.from("topic_counts").select("*");
+    const counts = {};
+    (data || []).forEach(r => counts[r.topic] = r.n);
+    const group = (title, list) => `<h2 class="group-title">${esc(title)}</h2>
+      <div class="topic-grid">${list.map(tp => `<a class="topic-card topic-${tp}" href="#/topic/${tp}">
+        <span class="topic-name">#${esc(t("topics")[tp])}</span>
+        <span class="topic-count">${esc(t("topicCount", counts[tp] || 0))}</span></a>`).join("")}</div>`;
+    $("topic-groups").innerHTML = group(t("groupEmotion"), GROUPS.emotion) + group(t("groupLife"), GROUPS.life);
   }
+
+  // ───────── Write ─────────
+  function renderWrite() {
+    $("write-kind").innerHTML = KINDS.map(k =>
+      `<button type="button" role="radio" class="chip filter" aria-checked="${k === writeKind}" data-kind="${k}">${esc(t("kinds")[k])}</button>`).join("");
+    $("write-topic").innerHTML = GROUPS.emotion.concat(GROUPS.life).map(tp =>
+      `<button type="button" role="radio" class="chip filter topic-${tp}" aria-checked="${tp === writeTopic}" data-topic="${tp}">#${esc(t("topics")[tp])}</button>`).join("");
+  }
+  $("write-kind").onclick = e => { const b = e.target.closest("[data-kind]"); if (b) { writeKind = b.dataset.kind; renderWrite(); } };
+  $("write-topic").onclick = e => { const b = e.target.closest("[data-topic]"); if (b) { writeTopic = b.dataset.topic; renderWrite(); } };
+  $("post-body").oninput = e => $("post-count").textContent = `${e.target.value.length} / 2000`;
+  $("post-form").onsubmit = async e => {
+    e.preventDefault();
+    const body = $("post-body").value.trim(); if (!body) return;
+    const btn = e.submitter; btn.disabled = true;
+    const { error } = await sb.from("posts").insert({ body, kind: writeKind, topic: writeTopic });
+    btn.disabled = false;
+    if (error) return setStatus($("post-status"), errText(error), true);
+    $("post-body").value = ""; $("post-count").textContent = "0 / 2000";
+    setStatus($("post-status"), "");
+    feedKind = "all";
+    location.hash = "#/square";
+  };
+
+  // ───────── Messages ─────────
+  async function refreshUnread() {
+    const { data } = await sb.from("my_conversations").select("id,unread");
+    const n = (data || []).reduce((s, c) => s + Number(c.unread || 0), 0);
+    $("unread-badge").hidden = !n;
+    $("unread-badge").textContent = n > 99 ? "99+" : String(n);
+  }
+
+  async function loadConversations() {
+    const { data, error } = await sb.from("my_conversations").select("*").order("last_message_at", { ascending: false });
+    if (error) { $("conv-list").innerHTML = `<p class="status err">${esc(t("loadError"))}</p>`; return; }
+    conversations = data;
+    renderConversations();
+    refreshUnread();
+  }
+
+  function renderConversations() {
+    if (!conversations.length) { $("conv-list").innerHTML = `<p class="empty">${esc(t("noConversations"))}</p>`; return; }
+    $("conv-list").innerHTML = `<ul class="conv-list">${conversations.map(c => `<li>
+      <a class="conv${c.unread > 0 ? " unread" : ""}" href="#/chat/${c.id}">
+        <span class="conv-top"><span class="nick">${esc(c.other_nickname)}</span><time>${esc(ago(c.last_message_at))}</time></span>
+        <span class="conv-last">${c.blocked ? "🚫 " : ""}${esc(c.last_body || t("noMessagesYet"))}</span>
+        ${c.unread > 0 ? `<span class="badge">${c.unread}</span>` : ""}
+      </a></li>`).join("")}</ul>`;
+  }
+
+  async function openChat(id) {
+    chat = null; chatMessages = [];
+    $("chat-log").innerHTML = `<p class="muted center">…</p>`;
+    const { data } = await sb.from("my_conversations").select("*").eq("id", id).maybeSingle();
+    if (!data) { location.hash = "#/messages"; return; }
+    chat = data;
+    await loadMessages(true);
+    chatTimer = setInterval(() => loadMessages(false), 4000);
+  }
+
+  async function loadMessages(scroll) {
+    if (!chat) return;
+    const id = chat.id;
+    const [{ data: msgs }, { data: conv }] = await Promise.all([
+      sb.from("messages").select("id,body,created_at,sender_id").eq("conversation_id", id).order("created_at"),
+      sb.from("my_conversations").select("*").eq("id", id).maybeSingle(),
+    ]);
+    if (!chat || chat.id !== id) return;
+    const changed = (msgs || []).length !== chatMessages.length || conv?.blocked !== chat.blocked;
+    chatMessages = msgs || [];
+    if (conv) chat = conv;
+    if (changed || scroll) {
+      const log = $("chat-log");
+      const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+      renderChat();
+      if (scroll || atBottom) log.scrollTop = log.scrollHeight;
+    }
+    if (chat.unread > 0) { await sb.rpc("mark_read", { conv: id }); refreshUnread(); }
+  }
+
+  function renderChat() {
+    if (!chat) return;
+    const me = session.user.id;
+    $("chat-title").textContent = chat.other_nickname;
+    $("chat-block").textContent = chat.blocked_by_me ? t("unblock") : t("block");
+    $("chat-block").hidden = chat.blocked && !chat.blocked_by_me;
+    $("chat-blocked").hidden = !chat.blocked;
+    $("chat-blocked").textContent = chat.blocked_by_me ? t("blockedByMe") : t("blockedByOther");
+    $("chat-form").hidden = chat.blocked;
+    $("chat-log").innerHTML = chatMessages.length ? chatMessages.map(m => {
+      const mine = m.sender_id === me;
+      return `<div class="bubble-row${mine ? " mine" : ""}">
+        <div class="bubble">${esc(m.body)}</div>
+        <div class="bubble-meta"><time>${esc(ago(m.created_at))}</time>
+          ${mine ? "" : `<button type="button" class="link" data-report-msg="${m.id}">${esc(t("report"))}</button>`}</div>
+      </div>`;
+    }).join("") : `<p class="empty">${esc(t("chatEmpty"))}</p>`;
+  }
+
+  $("chat-log").onclick = e => {
+    const b = e.target.closest("[data-report-msg]");
+    if (b) reportDialog("message", Number(b.dataset.reportMsg));
+  };
+  $("chat-block").onclick = () => {
+    if (!chat) return;
+    const on = !chat.blocked_by_me;
+    const run = async () => {
+      const { error } = await sb.rpc("set_block", { conv: chat.id, on_off: on });
+      if (error) return alertDialog(errText(error));
+      loadMessages(false);
+    };
+    on ? confirmDialog(t("block"), t("confirmBlock"), run) : run();
+  };
+  $("chat-input").addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("chat-form").requestSubmit(); }
+  });
+  $("chat-form").onsubmit = async e => {
+    e.preventDefault();
+    if (!chat) return;
+    const body = $("chat-input").value.trim(); if (!body) return;
+    const btn = $("chat-form").querySelector("button"); btn.disabled = true;
+    const { error } = await sb.from("messages").insert({ conversation_id: chat.id, body });
+    btn.disabled = false;
+    if (error) return setStatus($("chat-status"), errText(error), true);
+    setStatus($("chat-status"), "");
+    $("chat-input").value = "";
+    loadMessages(true);
+  };
 
   // ───────── Dialogs ─────────
   let lastFocus = null;
@@ -271,8 +466,8 @@
   function alertDialog(msg) {
     openDialog(t("brand"), `<p>${esc(msg)}</p><div class="row end"><button type="button" class="primary" data-close>OK</button></div>`);
   }
-  function confirmDialog(msg, onYes) {
-    openDialog(t("del"), `<p>${esc(msg)}</p><div class="row end">
+  function confirmDialog(title, msg, onYes) {
+    openDialog(title, `<p>${esc(msg)}</p><div class="row end">
       <button type="button" class="ghost" data-close>${esc(t("cancel"))}</button>
       <button type="button" class="danger" id="dlg-yes">${esc(t("yes"))}</button></div>`);
     $("dlg-yes").onclick = async () => { closeDialog(); await onYes(); };
@@ -283,8 +478,8 @@
     let helpful = prev ? prev.helpful : null;
     openDialog(t("rateTitle"), `<p class="muted">${esc(t("rateHint"))}</p>
       <div class="row" role="radiogroup" aria-label="${esc(t("rateTitle"))}">
-        <button type="button" class="chip big" role="radio" data-h="1" aria-checked="${helpful === true}">▲ ${esc(t("helpful"))}</button>
-        <button type="button" class="chip big" role="radio" data-h="0" aria-checked="${helpful === false}">▼ ${esc(t("unhelpful"))}</button>
+        <button type="button" class="chip filter big" role="radio" data-h="1" aria-checked="${helpful === true}">▲ ${esc(t("helpful"))}</button>
+        <button type="button" class="chip filter big" role="radio" data-h="0" aria-checked="${helpful === false}">▼ ${esc(t("unhelpful"))}</button>
       </div>
       <label class="sr" for="rate-comment">${esc(t("rateCommentPh"))}</label>
       <input id="rate-comment" maxlength="200" placeholder="${esc(t("rateCommentPh"))}" value="${esc(prev?.comment || "")}">
@@ -328,35 +523,37 @@
   }
 
   // ───────── Admin ─────────
+  const TABLE = { post: "posts", reply: "replies", message: "messages" };
   async function loadReports() {
     const { data, error } = await sb.from("reports").select("*").eq("resolved", false).order("created_at", { ascending: false });
     if (error) { reports = []; renderReports(); return; }
-    const postIds = data.filter(r => r.target_type === "post").map(r => r.target_id);
-    const replyIds = data.filter(r => r.target_type === "reply").map(r => r.target_id);
-    const [p, r] = await Promise.all([
-      postIds.length ? sb.from("posts").select("id,body,hidden,author_id").in("id", postIds) : { data: [] },
-      replyIds.length ? sb.from("replies").select("id,body,hidden,author_id").in("id", replyIds) : { data: [] },
+    const ids = type => data.filter(r => r.target_type === type).map(r => r.target_id);
+    const fetchT = (type, cols) => ids(type).length ? sb.from(TABLE[type]).select(cols).in("id", ids(type)) : { data: [] };
+    const [p, r, m] = await Promise.all([
+      fetchT("post", "id,body,hidden,author_id"),
+      fetchT("reply", "id,body,hidden,author_id"),
+      fetchT("message", "id,body,sender_id"),
     ]);
     const content = {};
     (p.data || []).forEach(x => content[key("post", x.id)] = x);
     (r.data || []).forEach(x => content[key("reply", x.id)] = x);
+    (m.data || []).forEach(x => content[key("message", x.id)] = { ...x, author_id: x.sender_id });
     reports = data.map(rep => ({ ...rep, content: content[key(rep.target_type, rep.target_id)] }));
     renderReports();
   }
 
   function renderReports() {
     const el = $("report-list");
-    if (!profile?.is_admin) { el.innerHTML = ""; return; }
-    if (!reports.length) { el.innerHTML = `<p class="muted">${esc(t("noReports"))}</p>`; return; }
-    el.innerHTML = reports.map(r => `<div class="report">
-      <div class="meta"><span class="chip">${esc(t("target")[r.target_type])}</span>
+    if (!reports.length) { el.innerHTML = `<p class="empty">${esc(t("noReports"))}</p>`; return; }
+    el.innerHTML = reports.map(r => `<div class="panel report">
+      <div class="meta"><span class="chip kind">${esc(t("target")[r.target_type])}</span>
         <strong>${esc(t("reasons")[r.reason])}</strong><time>${esc(ago(r.created_at))}</time>
         ${r.content?.hidden ? `<span class="flag">${esc(t("hidden"))}</span>` : ""}</div>
       <p class="body">${r.content ? esc(r.content.body) : esc(t("deleted"))}</p>
       ${r.note ? `<p class="muted small">“${esc(r.note)}”</p>` : ""}
       <div class="row">
-        ${r.content ? `<button type="button" class="ghost small" data-admin="hide" data-rid="${r.id}">${esc(r.content.hidden ? t("unhide") : t("hide"))}</button>
-        <button type="button" class="danger small" data-admin="ban" data-rid="${r.id}">${esc(t("ban"))}</button>` : ""}
+        ${r.content && r.target_type !== "message" ? `<button type="button" class="ghost small" data-admin="hide" data-rid="${r.id}">${esc(r.content.hidden ? t("unhide") : t("hide"))}</button>` : ""}
+        ${r.content ? `<button type="button" class="danger small" data-admin="ban" data-rid="${r.id}">${esc(t("ban"))}</button>` : ""}
         <button type="button" class="primary small" data-admin="resolve" data-rid="${r.id}">${esc(t("resolve"))}</button>
       </div></div>`).join("");
   }
@@ -364,19 +561,18 @@
   $("report-list").onclick = async e => {
     const b = e.target.closest("[data-admin]"); if (!b) return;
     const rep = reports.find(r => r.id === Number(b.dataset.rid)); if (!rep) return;
-    const table = rep.target_type === "post" ? "posts" : "replies";
     let res;
-    if (b.dataset.admin === "hide") res = await sb.from(table).update({ hidden: !rep.content.hidden }).eq("id", rep.target_id);
+    if (b.dataset.admin === "hide") res = await sb.from(TABLE[rep.target_type]).update({ hidden: !rep.content.hidden }).eq("id", rep.target_id);
     if (b.dataset.admin === "ban") res = await sb.from("profiles").update({ banned: true }).eq("id", rep.content.author_id);
     if (b.dataset.admin === "resolve") res = await sb.from("reports").update({ resolved: true }).eq("id", rep.id);
     if (res?.error) return alertDialog(errText(res.error));
-    await loadReports();
-    loadFeed(true);
+    loadReports();
   };
 
   // ───────── Start ─────────
   applyLang();
-  if (cfgOk) {
+  if (!cfgOk) { showSetup(); }
+  else {
     // Fires INITIAL_SESSION once on load, then again whenever someone signs in or out.
     sb.auth.onAuthStateChange((evt, s) => {
       if (evt === "INITIAL_SESSION" || (s?.user.id || null) !== (session?.user.id || null)) setTimeout(() => onSession(s), 0);
