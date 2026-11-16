@@ -96,7 +96,7 @@
     document.querySelectorAll("[data-i18n-ph]").forEach(el => el.placeholder = t(el.dataset.i18nPh));
     document.querySelectorAll("[data-i18n-aria]").forEach(el => el.setAttribute("aria-label", t(el.dataset.i18nAria)));
     $("lang-toggle").textContent = lang === "zh" ? "EN" : "中文";
-    if (!cfg.emailCode) {
+    if (cfg.emailCode === false) {
       document.querySelector('[data-i18n="sendLink"]').textContent = t("sendLinkOnly");
       document.querySelector('[data-i18n="signInHint"]').textContent = t("signInHintLink");
     }
@@ -156,8 +156,8 @@
     });
     btn.disabled = false;
     // The code box only makes sense once the Supabase email template includes {{ .Token }} (needs custom SMTP).
-    setStatus($("auth-status"), error ? errText(error) : t(cfg.emailCode ? "linkSent" : "linkOnlySent"), !!error);
-    if (!error && cfg.emailCode) { $("code-form").hidden = false; $("auth-code").focus(); }
+    setStatus($("auth-status"), error ? errText(error) : t(cfg.emailCode !== false ? "linkSent" : "linkOnlySent"), !!error);
+    if (!error && cfg.emailCode !== false) { $("code-form").hidden = false; $("auth-code").focus(); }
   };
   $("code-form").onsubmit = async e => {
     e.preventDefault();
