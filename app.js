@@ -151,8 +151,9 @@
       options: { emailRedirectTo: location.origin + location.pathname },
     });
     btn.disabled = false;
-    setStatus($("auth-status"), error ? errText(error) : t("linkSent"), !!error);
-    if (!error) { $("code-form").hidden = false; $("auth-code").focus(); }
+    // The code box only makes sense once the Supabase email template includes {{ .Token }} (needs custom SMTP).
+    setStatus($("auth-status"), error ? errText(error) : t(cfg.emailCode ? "linkSent" : "linkOnlySent"), !!error);
+    if (!error && cfg.emailCode) { $("code-form").hidden = false; $("auth-code").focus(); }
   };
   $("code-form").onsubmit = async e => {
     e.preventDefault();
