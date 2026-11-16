@@ -58,7 +58,9 @@ button, input, textarea { font: inherit; color: inherit; }
 
 input, textarea { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 textarea { resize: vertical; min-height: 3.2em; }
-#auth-form input { flex: 1 1 220px; width: auto; }
+#auth-form input, #auth-code { flex: 1 1 220px; width: auto; }
+.code-step { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line); }
+#auth-code { letter-spacing: 0.3em; font-variant-numeric: tabular-nums; }
 #post-form .row.between { margin-top: 10px; }
 .count { font-size: 0.8125rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .status { margin: 6px 0 0; font-size: 0.875rem; color: var(--accent); min-height: 1.2em; }

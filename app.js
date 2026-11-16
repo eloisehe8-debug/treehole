@@ -95,6 +95,18 @@
     });
     btn.disabled = false;
     setStatus($("auth-status"), error ? errText(error) : t("linkSent"), !!error);
+    if (!error) { $("code-form").hidden = false; $("auth-code").focus(); }
+  };
+  $("code-form").onsubmit = async e => {
+    e.preventDefault();
+    const btn = e.submitter; btn.disabled = true;
+    const { error } = await sb.auth.verifyOtp({
+      email: $("auth-email").value.trim(),
+      token: $("auth-code").value.trim(),
+      type: "email",
+    });
+    btn.disabled = false;
+    if (error) setStatus($("auth-status"), t("codeWrong"), true);
   };
   $("sign-out").onclick = () => sb.auth.signOut();
 

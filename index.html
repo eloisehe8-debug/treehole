@@ -31,11 +31,19 @@
 
   <section class="panel" id="auth" hidden>
     <h2 data-i18n="signInTitle">登录后才能发帖和回复</h2>
-    <p class="muted" data-i18n="signInHint">输入邮箱，我们会发一个登录链接给你。别人只会看到你的随机昵称，看不到邮箱。</p>
+    <p class="muted" data-i18n="signInHint">输入邮箱，我们会发一封带验证码和登录链接的邮件给你。别人只会看到你的随机昵称，看不到邮箱。</p>
     <form id="auth-form" class="row">
       <label class="sr" for="auth-email" data-i18n="email">邮箱</label>
       <input id="auth-email" type="email" required autocomplete="email" placeholder="you@example.com">
-      <button type="submit" class="primary" data-i18n="sendLink">发送登录链接</button>
+      <button type="submit" class="primary" data-i18n="sendLink">发送验证码</button>
+    </form>
+    <form id="code-form" class="code-step" hidden>
+      <label for="auth-code" class="label" data-i18n="codeLabel">输入邮件里的验证码</label>
+      <div class="row">
+        <input id="auth-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required placeholder="123456">
+        <button type="submit" class="primary" data-i18n="verify">登录</button>
+      </div>
+      <p class="muted small" data-i18n="codeHint">在任何设备上看邮件都可以，把验证码输入到这里。也可以直接点邮件里的链接。</p>
     </form>
     <p class="status" id="auth-status" role="status"></p>
   </section>
