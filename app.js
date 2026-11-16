@@ -96,6 +96,10 @@
     document.querySelectorAll("[data-i18n-ph]").forEach(el => el.placeholder = t(el.dataset.i18nPh));
     document.querySelectorAll("[data-i18n-aria]").forEach(el => el.setAttribute("aria-label", t(el.dataset.i18nAria)));
     $("lang-toggle").textContent = lang === "zh" ? "EN" : "中文";
+    if (!cfg.emailCode) {
+      document.querySelector('[data-i18n="sendLink"]').textContent = t("sendLinkOnly");
+      document.querySelector('[data-i18n="signInHint"]').textContent = t("signInHintLink");
+    }
     renderMe();
   }
   $("lang-toggle").onclick = () => {
