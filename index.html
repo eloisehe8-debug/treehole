@@ -12,56 +12,127 @@
 <body>
 <header class="top">
   <div class="top-inner">
-    <a class="brand" href="./"><span class="hole" aria-hidden="true"></span><span data-i18n="brand">树洞</span></a>
+    <a class="brand" href="#/square"><span class="hole" aria-hidden="true"></span><span data-i18n="brand">树洞</span></a>
     <div class="top-actions">
-      <button type="button" class="ghost" id="lang-toggle" aria-label="Switch language">EN</button>
+      <button type="button" class="ghost small" id="lang-toggle" aria-label="Switch language">EN</button>
       <span class="me" id="me" hidden></span>
-      <button type="button" class="ghost" id="sign-out" hidden data-i18n="signOut">退出</button>
+      <button type="button" class="ghost small" id="sign-out" hidden data-i18n="signOut">退出</button>
     </div>
   </div>
+  <nav class="tabs" id="tabs" hidden>
+    <div class="tabs-inner">
+      <a href="#/square" data-tab="square" data-i18n="tabSquare">广场</a>
+      <a href="#/topics" data-tab="topics" data-i18n="tabTopics">话题</a>
+      <a href="#/write" data-tab="write" class="tab-write" data-i18n="tabWrite">发布</a>
+      <a href="#/messages" data-tab="messages"><span data-i18n="tabMessages">私信</span><span class="badge" id="unread-badge" hidden></span></a>
+      <a href="#/admin" data-tab="admin" id="tab-admin" hidden data-i18n="tabAdmin">管理</a>
+    </div>
+  </nav>
 </header>
 
 <main class="page">
-  <section class="intro">
-    <h1 data-i18n="tagline">把烦心事说给树洞听</h1>
-    <p data-i18n="intro">这里每个人都是匿名的。你可以倾诉，也可以倾听别人；对倾诉和回复都可以匿名评价或举报。</p>
-  </section>
-
   <section class="notice" id="setup" hidden></section>
 
-  <section class="panel" id="auth" hidden>
-    <h2 data-i18n="signInTitle">登录后才能发帖和回复</h2>
-    <p class="muted" data-i18n="signInHint">输入邮箱，我们会发一个登录链接给你。别人只会看到你的随机昵称，看不到邮箱。</p>
-    <form id="auth-form" class="row">
-      <label class="sr" for="auth-email" data-i18n="email">邮箱</label>
-      <input id="auth-email" type="email" required autocomplete="email" placeholder="you@example.com">
-      <button type="submit" class="primary" data-i18n="sendLink">发送登录链接</button>
-    </form>
-    <p class="status" id="auth-status" role="status"></p>
+  <!-- Signed out: only this -->
+  <section id="view-auth" hidden>
+    <div class="intro">
+      <h1 data-i18n="tagline">把烦心事说给树洞听</h1>
+      <p data-i18n="intro">说那些不方便和熟人讲的话。这里没人知道你是谁。</p>
+    </div>
+    <ul class="features">
+      <li><strong data-i18n="f1Title">匿名发布</strong><span data-i18n="f1Body">写下心事、感悟、随笔，不暴露真实身份。</span></li>
+      <li><strong data-i18n="f2Title">广场互动</strong><span data-i18n="f2Body">浏览别人的树洞，在评论区安慰、交流、互相开导。</span></li>
+      <li><strong data-i18n="f3Title">匿名私聊</strong><span data-i18n="f3Body">和陌生人一对一文字陪伴；遇到骚扰可以举报和屏蔽。</span></li>
+      <li><strong data-i18n="f4Title">话题社区</strong><span data-i18n="f4Body">按情绪和生活话题找到同频的人。</span></li>
+    </ul>
+    <div class="panel">
+      <h2 data-i18n="signInTitle">登录后进入树洞</h2>
+      <p class="muted" data-i18n="signInHint">输入邮箱，我们会发一封带验证码和登录链接的邮件给你。别人只会看到你的随机昵称，看不到邮箱。</p>
+      <form id="auth-form" class="row">
+        <label class="sr" for="auth-email" data-i18n="email">邮箱</label>
+        <input id="auth-email" type="email" required autocomplete="email" placeholder="you@example.com">
+        <button type="submit" class="primary" data-i18n="sendLink">发送验证码</button>
+      </form>
+      <form id="code-form" class="code-step" hidden>
+        <label for="auth-code" class="label" data-i18n="codeLabel">输入邮件里的验证码</label>
+        <div class="row">
+          <input id="auth-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required placeholder="123456">
+          <button type="submit" class="primary" data-i18n="verify">登录</button>
+        </div>
+        <p class="muted small" data-i18n="codeHint">在任何设备上看邮件都可以，把验证码输入到这里。也可以直接点邮件里的链接。</p>
+      </form>
+      <p class="status" id="auth-status" role="status"></p>
+    </div>
   </section>
 
-  <section class="panel" id="compose" hidden>
-    <form id="post-form">
+  <!-- Square and single topic share this feed view -->
+  <section id="view-feed" hidden>
+    <div class="view-head">
+      <a href="#/topics" class="back" id="feed-back" hidden data-i18n="backTopics">← 全部话题</a>
+      <h1 id="feed-title"></h1>
+      <p class="muted" id="feed-sub"></p>
+    </div>
+    <div class="filters" id="kind-filter" role="radiogroup" data-i18n-aria="kindLabel" aria-label="类型"></div>
+    <div id="feed" aria-live="polite"></div>
+    <div class="center"><button type="button" class="ghost" id="more" hidden data-i18n="loadMore">加载更多</button></div>
+  </section>
+
+  <section id="view-topics" hidden>
+    <div class="view-head">
+      <h1 data-i18n="topicsTitle">话题社区</h1>
+      <p class="muted" data-i18n="topicsSub">围绕同一种情绪或生活话题，看看别人怎么说。</p>
+    </div>
+    <div id="topic-groups"></div>
+  </section>
+
+  <section id="view-write" hidden>
+    <div class="view-head">
+      <h1 data-i18n="writeTitle">匿名发布</h1>
+      <p class="muted" data-i18n="writeSub">不用暴露真实身份，写下不方便和熟人讲的话。</p>
+    </div>
+    <form id="post-form" class="panel">
+      <span class="label" data-i18n="kindLabel">类型</span>
+      <div class="filters" id="write-kind" role="radiogroup" data-i18n-aria="kindLabel" aria-label="类型"></div>
+      <span class="label" data-i18n="topicLabel">话题</span>
+      <div class="filters wrap" id="write-topic" role="radiogroup" data-i18n-aria="topicLabel" aria-label="话题"></div>
       <label for="post-body" class="label" data-i18n="composeLabel">想说点什么？</label>
-      <textarea id="post-body" maxlength="2000" rows="4" required data-i18n-ph="composePh" placeholder="今天让你烦心的事……"></textarea>
+      <textarea id="post-body" maxlength="2000" rows="7" required data-i18n-ph="composePh" placeholder="今天让你烦心的事……"></textarea>
       <div class="row between">
-        <div class="moods" id="mood-picker" role="radiogroup" data-i18n-aria="moodLabel" aria-label="心情"></div>
-        <div class="row">
-          <span class="count" id="post-count">0 / 2000</span>
-          <button type="submit" class="primary" data-i18n="post">放进树洞</button>
-        </div>
+        <span class="count" id="post-count">0 / 2000</span>
+        <button type="submit" class="primary" data-i18n="post">放进树洞</button>
       </div>
       <p class="status" id="post-status" role="status"></p>
     </form>
   </section>
 
-  <section class="panel admin" id="admin" hidden>
-    <h2 data-i18n="adminTitle">待处理的举报</h2>
-    <div id="report-list"></div>
+  <section id="view-messages" hidden>
+    <div class="view-head">
+      <h1 data-i18n="messagesTitle">私信</h1>
+      <p class="muted" data-i18n="messagesSub">在帖子或评论旁点「私信」，就能和对方匿名聊天。</p>
+    </div>
+    <div id="conv-list"></div>
   </section>
 
-  <section id="feed" aria-live="polite"></section>
-  <div class="center"><button type="button" class="ghost" id="more" hidden data-i18n="loadMore">加载更多</button></div>
+  <section id="view-chat" hidden>
+    <div class="chat-head">
+      <a href="#/messages" class="back" data-i18n="backMessages">← 私信</a>
+      <h1 id="chat-title"></h1>
+      <button type="button" class="ghost small" id="chat-block"></button>
+    </div>
+    <div class="chat-log" id="chat-log" aria-live="polite"></div>
+    <p class="notice small" id="chat-blocked" hidden></p>
+    <form id="chat-form" class="chat-form">
+      <label class="sr" for="chat-input" data-i18n="chatPh">写点什么……</label>
+      <textarea id="chat-input" rows="1" maxlength="1000" required data-i18n-ph="chatPh" placeholder="写点什么……"></textarea>
+      <button type="submit" class="primary" data-i18n="send">发送</button>
+    </form>
+    <p class="status" id="chat-status" role="status"></p>
+  </section>
+
+  <section id="view-admin" hidden>
+    <div class="view-head"><h1 data-i18n="adminTitle">待处理的举报</h1></div>
+    <div id="report-list"></div>
+  </section>
 </main>
 
 <footer class="help">
